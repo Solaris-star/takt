@@ -143,12 +143,32 @@ describe('workflow prompt definition tree', () => {
     expect(resolver).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects a definition that makes the current marker ambiguous', () => {
-    const tree = buildWorkflowPromptTree(workflow('root', [makeStep({ description: '← 現在' })]), undefined, '/project', '/work');
-    expect(() => renderWorkflowPromptTree(tree, [['steps', 0]], 'ja')).toThrow(/exactly one/);
-  });
+  describe.each(['ja', 'en'] as const)('current-step marker in %s', (language) => {
+    it.each(['workflow', 'current step', 'other step'] as const)('preserves marker text in the %s description', (location) => {
+      const description = 'Marker examples: ← 現在 and ← current';
+      const root = workflow('root', [
+        makeStep({ name: 'current', description: location === 'current step' ? description : undefined }),
+        makeStep({ name: 'other', description: location === 'other step' ? description : undefined }),
+      ], location === 'workflow' ? description : undefined);
+      const tree = buildWorkflowPromptTree(root, undefined, '/project', '/work');
+      const workflowLabel = language === 'ja' ? '（ワークフロー）' : ' (workflow)';
+      const marker = language === 'ja' ? '← 現在' : '← current';
 
-  it('fails when the current route does not identify exactly one row', () => {
-    expect(() => renderWorkflowPromptTree(fixture().tree, [['steps', 99]], 'ja')).toThrow(/exactly one/);
+      expect(renderWorkflowPromptTree(tree, [['steps', 0]], language)).toBe([
+        `- root${workflowLabel}${location === 'workflow' ? `: ${description}` : ''}`,
+        `  - current${location === 'current step' ? `: ${description}` : ''} ${marker}`,
+        `  - other${location === 'other step' ? `: ${description}` : ''}`,
+      ].join('\n'));
+    });
+
+    it('fails when the current route does not identify a row', () => {
+      expect(() => renderWorkflowPromptTree(fixture().tree, [['steps', 99]], language)).toThrow(/exactly one/);
+    });
+
+    it('fails when the current route identifies duplicate rows', () => {
+      const tree = buildWorkflowPromptTree(workflow('root', [makeStep({ name: 'current' })]), undefined, '/project', '/work');
+      const duplicateTree = { ...tree, rows: [...tree.rows, tree.rows[1]!] };
+      expect(() => renderWorkflowPromptTree(duplicateTree, [['steps', 0]], language)).toThrow(/exactly one/);
+    });
   });
 });

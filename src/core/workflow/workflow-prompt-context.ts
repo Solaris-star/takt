@@ -122,8 +122,7 @@ export function renderWorkflowPromptTree(tree: WorkflowPromptTree, current: Work
     const marker = isCurrent ? (language === 'ja' ? ' ← 現在' : ' ← current') : '';
     return `${row[language]}${marker}`;
   }).join('\n');
-  const marker = language === 'ja' ? '← 現在' : '← current';
-  if (marked !== 1 || result.split(marker).length !== 2) throw new Error('Workflow prompt tree must mark exactly one current step');
+  if (marked !== 1) throw new Error('Workflow prompt tree must mark exactly one current step');
   return result;
 }
 
