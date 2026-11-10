@@ -246,6 +246,39 @@ describe('taskDeleteActions', () => {
     expect(raw).not.toContain('failed-task');
   });
 
+  it.each(['develop', 'main', 'feature/user-owned'])('deletes an in-place task without deleting its %s branch', (branch) => {
+    const git = (...args: string[]): string => execFileSync('git', args, {
+      cwd: tmpDir, encoding: 'utf8', stdio: 'pipe',
+    }).trim();
+    git('init', '--quiet', '--initial-branch=main');
+    git('-c', 'user.name=TAKT Test', '-c', 'user.email=test@example.com',
+      '-c', 'commit.gpgsign=false', 'commit', '--quiet', '--allow-empty', '-m', 'base');
+    if (branch !== 'main') {
+      git('checkout', '--quiet', '-b', branch);
+      git('-c', 'user.name=TAKT Test', '-c', 'user.email=test@example.com',
+        '-c', 'commit.gpgsign=false', 'commit', '--quiet', '--allow-empty', '-m', 'unmerged work');
+      git('checkout', '--quiet', 'main');
+    }
+    const originalHead = git('rev-parse', `refs/heads/${branch}`);
+    const runner = new TaskRunner(tmpDir);
+    fs.mkdirSync(path.dirname(runner.getTasksFilePath()), { recursive: true });
+    fs.writeFileSync(runner.getTasksFilePath(), stringifyYaml({ tasks: [
+      { name: 'in-place', status: 'failed', content: 'keep branch', worktree: false,
+        branch, base_branch: branch, created_at: '2026-11-07T00:00:00.000Z',
+        started_at: '2026-11-07T00:01:00.000Z', completed_at: '2026-11-07T00:02:00.000Z',
+        failure: { error: 'failed' } },
+    ] }));
+    const task = runner.listAllTaskItems()[0]!;
+    expect(task.data?.worktree).toBe(false);
+    mockDeleteBranch.mockImplementation(deleteBranch);
+
+    expect(deleteTaskResources(task, { quiet: true })).toBe(true);
+
+    expect(runner.listAllTaskItems()).toEqual([]);
+    expect(git('rev-parse', `refs/heads/${branch}`)).toBe(originalHead);
+    expect(mockDeleteBranch).not.toHaveBeenCalled();
+  });
+
   it('merge taskのheadがmainでもroot branchを削除せずcloneだけを片付ける', async () => {
     const tasksFile = setupTasksFile(tmpDir);
     const clonePath = path.join(tmpDir, '.takt', 'worktrees', 'merge-pr-123');
