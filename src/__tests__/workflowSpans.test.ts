@@ -146,7 +146,7 @@ async function loadWorkflowSpansWithRealSdk() {
   vi.resetModules();
   vi.doUnmock('@opentelemetry/api');
 
-  const [{ context, trace }, { NodeSDK }, { SimpleSpanProcessor }] = await Promise.all([
+  const [{ context, trace }, { NodeSDK }, { AlwaysOnSampler, SimpleSpanProcessor }] = await Promise.all([
     import('@opentelemetry/api'),
     import('@opentelemetry/sdk-node'),
     import('@opentelemetry/sdk-trace-base'),
@@ -158,6 +158,8 @@ async function loadWorkflowSpansWithRealSdk() {
   const sdk = new NodeSDK({
     autoDetectResources: false,
     instrumentations: [],
+    // Span assertions must not inherit a developer's production sampling rate.
+    sampler: new AlwaysOnSampler(),
     spanProcessors: [new SimpleSpanProcessor(exporter)],
     // Without explicit empty lists the SDK creates env-default OTLP metric and
     // log exporters whose shutdown flush retries against a collector that does
@@ -225,8 +227,11 @@ function findReadableSpan(spans: ReadableSpan[], name: string): ReadableSpan {
   return span;
 }
 
+const traceSamplerSettings = ['always_on', 'always_off', 'traceidratio', 'parentbased_traceidratio'];
+
 describe('workflow OpenTelemetry spans', () => {
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.doUnmock('@opentelemetry/api');
     vi.resetModules();
   });
@@ -418,7 +423,9 @@ describe('workflow OpenTelemetry spans', () => {
     ]);
   });
 
-  it('exports workflow_start before the root workflow span ends with the real OpenTelemetry SDK', async () => {
+  it.each(traceSamplerSettings)('exports workflow_start before the root workflow span ends with the real SDK under %s sampling', async (sampler) => {
+    vi.stubEnv('OTEL_TRACES_SAMPLER', sampler);
+    vi.stubEnv('OTEL_TRACES_SAMPLER_ARG', '0');
     const { module, exporter, shutdown } = await loadWorkflowSpansWithRealSdk();
 
     try {
@@ -459,7 +466,9 @@ describe('workflow OpenTelemetry spans', () => {
     }
   });
 
-  it('records sanitized step-level failure metadata for rejected workflow executions with the real OpenTelemetry SDK', async () => {
+  it.each(traceSamplerSettings)('records sanitized failure metadata with the real SDK under %s sampling', async (sampler) => {
+    vi.stubEnv('OTEL_TRACES_SAMPLER', sampler);
+    vi.stubEnv('OTEL_TRACES_SAMPLER_ARG', '0');
     const { module, exporter, shutdown } = await loadWorkflowSpansWithRealSdk();
     const error = new Error('workflow execution rejected');
 
