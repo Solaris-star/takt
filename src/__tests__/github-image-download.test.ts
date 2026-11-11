@@ -159,7 +159,12 @@ describe('downloadGithubImage', () => {
     png.copy(bytes);
     mockFetch.mockResolvedValueOnce(imageResponse(bytes, 'image/png'));
 
-    await expect(downloadGithubImage(url, '/project')).resolves.toEqual({ bytes, extension: 'png' });
+    const result = await downloadGithubImage(url, '/project');
+
+    expect(result.extension).toBe('png');
+    expect(result.bytes.length).toBe(limit);
+    // Avoid enumerating millions of Buffer indices in a deep-equality assertion.
+    expect(result.bytes.equals(bytes)).toBe(true);
   });
 
   it.each([401, 404])('reports HTTP %s as an image failure', async (status) => {
